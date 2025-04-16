@@ -21,3 +21,10 @@ Install the required dependencies using the provided `requirements.txt`:
 To install:
 ```bash
 pip install -r requirements.txt
+
+## How to Run
+
+1. Clone or download the repository.
+2. Place all assets in an `assets/` folder.
+3. Run the main simulation file
+
