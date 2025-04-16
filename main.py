@@ -1,7 +1,9 @@
 import numpy as np
-import cv2
+import pygame
 import random
 from PIL import Image
+import io
+import os
 
 # Constants
 GRID_SIZE = 10
@@ -13,30 +15,25 @@ WATER_TILE = 4
 DEHYDRATED_AGENT = 5
 HOSE_AGENT = 6
 
-FIRE_SPREAD_PROB = 0.55
-MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Up, Down, Left, Right
-
+FIRE_SPREAD_PROB = 0.6
+MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]  
+FPS = 3
+CELL_SIZE = 100
+SCREEN_SIZE = GRID_SIZE * CELL_SIZE  # 1000x1000
 
 # Initialize grid
 grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
-# Add water buckets to the left and right sides (middle row)
-grid[5, 0] = WATER_TILE  # Left side
-grid[5, GRID_SIZE - 1] = WATER_TILE  # Right side
-
-# Add water buckets at the bottom row
-grid[GRID_SIZE - 1, 3] = WATER_TILE
-grid[GRID_SIZE - 1, 6] = WATER_TILE
 
 # Add fire locations
-fires = [(7, 2), (9, 7), (8,6)]
+fires = [(7, 2), (9, 7)]
 for x, y in fires:
     grid[x, y] = FIRE
 
-# Add water refill tiles (alternating blue tiles in top row)
-for i in range(GRID_SIZE):
+# Water Location
+for i in range(0, GRID_SIZE):  
     grid[0, i] = WATER_TILE
 
-# Add agents
+# Agents
 agents = [(0, 0), (9, 9), (0, 9), (9, 0), (6, 7)]
 agent_states = {
     agent: {
@@ -50,24 +47,70 @@ agent_states = {
 for x, y in agents:
     grid[x, y] = AGENT
 
-hose_agent = agents[0]  # First agent has a hose
+hose_agent = agents[0]  
 
-# Randomly generate obstacles
-num_obstacles = 10
+num_obstacles = 15
 obstacles = set()
-cell_size = 100  # Image display cell size
+cell_size = CELL_SIZE
 
-# Load image with transparency
-def load_image(path, scale=1.0):
-    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-    return cv2.resize(img, (cell_size, cell_size))
+# Initialize Pygame
+pygame.init()
+screen = pygame.display.set_mode((SCREEN_SIZE, SCREEN_SIZE))
+pygame.display.set_caption("Firefighting Simulation")
+clock = pygame.time.Clock()
 
-agent_img = load_image("assets\\bot.png", scale=0.85)
-agent_dehydrated_img = load_image("assets\\bot2.png")
-obstacles_img = load_image("assets\\Obstacle.png", scale=1.0)
-agent_hose_img = load_image("assets\\bot3.png")
-water_tile_img = load_image("assets\\water_tank.png", scale=2.0)
+# Load image with Pygame (for icons)
+def load_image(path):
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.scale(img, (cell_size, cell_size))
+        return img
+    except Exception as e:
+        print(f"Error loading image {path}: {e}")
+        return pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
 
+# Load background image
+def load_background_image(path):
+    try:
+        img = pygame.image.load(path).convert()
+        img = pygame.transform.scale(img, (SCREEN_SIZE, SCREEN_SIZE))
+        return img
+    except Exception as e:
+        print(f"Error loading background {path}: {e}")
+        # Fallback: solid gray background
+        surf = pygame.Surface((SCREEN_SIZE, SCREEN_SIZE))
+        surf.fill((100, 100, 100))
+        return surf
+
+agent_img = load_image("assets/bot.png")
+agent_dehydrated_img = load_image("assets/bot2.png")
+obstacles_img = load_image("assets/Obstacle.png")
+agent_hose_img = load_image("assets/bot3.png")
+water_tile_img = load_image("assets/water_tank.png")
+background_img = load_background_image("assets/Grid_dark.png")
+
+# Function to load GIF frames for Pygame
+def load_gif_frames(gif_path, cell_size):
+    try:
+        gif = Image.open(gif_path)
+        frames = []
+        while True:
+            frame = gif.convert("RGBA")
+            frame = frame.resize((cell_size, cell_size), Image.Resampling.LANCZOS)
+            frame_data = frame.tobytes()
+            pygame_frame = pygame.image.fromstring(frame_data, frame.size, "RGBA").convert_alpha()
+            frames.append(pygame_frame)
+            gif.seek(gif.tell() + 1)
+    except EOFError:
+        pass
+    except Exception as e:
+        print(f"Error loading GIF {gif_path}: {e}")
+        return [pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)]
+    return frames
+
+# Load the GIF frames
+fire_gif_frames = load_gif_frames("assets/fire.gif", cell_size)
+fire_frame_index = 0
 
 def is_adjacent_to_agent(x, y):
     for ax, ay in agents:
@@ -75,7 +118,7 @@ def is_adjacent_to_agent(x, y):
             return True
     return False
 
-# Scatter obstacles across grid
+# Scatter obstacles
 region_size = max(1, GRID_SIZE // int(num_obstacles**0.5))
 for i in range(0, GRID_SIZE, region_size):
     for j in range(0, GRID_SIZE, region_size):
@@ -131,7 +174,6 @@ def extinguish_fire(x, y):
             if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
                 if grid[nx, ny] == FIRE:
                     grid[nx, ny] = EMPTY
-
 
 def hose_extinguish_fire(x, y, state):
     if state["water_remaining"] == 0:
@@ -218,109 +260,88 @@ def move_agents():
     agents = new_agents
     agent_states = new_agent_states
 
-
-def overlay_image(background, overlay, x, y):
-    h, w = overlay.shape[:2]
-    if overlay.shape[2] == 4:
-        for i in range(h):
-            for j in range(w):
-                alpha = overlay[i, j, 3] / 255.0
-                if alpha > 0:
-                    for c in range(3):
-                        background[y + i, x + j, c] = (
-                            alpha * overlay[i, j, c] + (1 - alpha) * background[y + i, x + j, c]
-                        )
-
-
-# Function to load frames from a GIF
-def load_gif_frames(gif_path, cell_size):
-    gif = Image.open(gif_path)
-    frames = []
-    try:
-        while True:
-            frame = np.array(gif.convert("RGBA")) 
-            frame = cv2.resize(frame, (cell_size, cell_size))
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGRA)  # 🔥 This is the key fix
-            frames.append(frame)
-            gif.seek(gif.tell() + 1)  
-    except EOFError:
-        pass  
-    return frames
-
-
-# Load the GIF frames
-fire_gif_frames = load_gif_frames("assets/fire.gif", cell_size)
-
-# Initialize global fire_frame_index
-fire_frame_index = 0
-fire_frame_index = (fire_frame_index + 2) % len(fire_gif_frames)  # Skip every other frame
-
-
-
-
 def show_grid():
     global fire_frame_index
     fire_frame_index = (fire_frame_index + 1) % len(fire_gif_frames)
 
-    cell_size = 100
-    expected_width = GRID_SIZE * cell_size  # 800
-    expected_height = GRID_SIZE * cell_size  # 800
-    
-    # Load the full background image (should be exactly grid size)
-    background = cv2.imread('assets/Grid.jpg')
-    background.shape  # should be (800, 800, 3) or (800, 800, 4)
+    # Clear screen and draw background
+    screen.fill((0, 0, 0))  # Black fallback
+    screen.blit(background_img, (0, 0))
 
-    if background is None:
-        raise FileNotFoundError("Could not load 'assets/tiles2.jpg'. Check the file path and existence.")
-
-    # Check if background image matches expected dimensions
-    expected_height = GRID_SIZE * cell_size
-    expected_width = GRID_SIZE * cell_size
-    if background.shape[1] != expected_width or background.shape[0] != expected_height:
-        background = cv2.resize(background, (expected_width, expected_height))
-    if background.shape[0] != expected_height or background.shape[1] != expected_width:
-        raise ValueError(f"Image size mismatch. Expected {expected_width}x{expected_height}, got {background.shape[1]}x{background.shape[0]}")
-
-    # Create canvas as a copy
-    img = background.copy()
-
-    # Overlay dynamic elements (fire, agents, etc.)
+    # Overlay dynamic elements
     for x in range(GRID_SIZE):
         for y in range(GRID_SIZE):
-            py = x * cell_size
-            px = y * cell_size
-
+            px = y * cell_size  # Pygame: x-axis is horizontal
+            py = x * cell_size  # Pygame: y-axis is vertical
             if grid[x, y] == OBSTACLE:
-                overlay_image(img, obstacles_img, px, py)
+                screen.blit(obstacles_img, (px, py))
             elif grid[x, y] == FIRE:
                 fire_frame = fire_gif_frames[fire_frame_index]
-                overlay_image(img, fire_frame, px, py)
+                screen.blit(fire_frame, (px, py))
             elif grid[x, y] == WATER_TILE:
-                overlay_image(img, water_tile_img, px, py)
+                screen.blit(water_tile_img, (px, py))
             elif grid[x, y] == AGENT:
-                overlay_image(img, agent_img, px, py)
+                screen.blit(agent_img, (px, py))
             elif grid[x, y] == DEHYDRATED_AGENT:
-                overlay_image(img, agent_dehydrated_img, px, py)
+                screen.blit(agent_dehydrated_img, (px, py))
             elif grid[x, y] == HOSE_AGENT:
-                overlay_image(img, agent_hose_img, px, py)
+                screen.blit(agent_hose_img, (px, py))
 
-    cv2.imshow("Firefighting Simulation", img)
-    cv2.waitKey(1)
+    # Render and display completion message if simulation is complete
+    if 'simulation_complete' in globals() and simulation_complete:
+        font = pygame.font.SysFont(None, 74)
+        text = font.render("ALL FIRES EXTINGUISHED!!", True, (255, 255, 0))  # Yellow text
+        text_rect = text.get_rect(center=(SCREEN_SIZE // 2, SCREEN_SIZE // 2))
+        screen.blit(text, text_rect)
 
+    pygame.display.flip()
 
 def run_simulation():
-    global exploration_rate
-    for step in range(100):
-        print(f"🔥 Step {step+1}")
-        show_grid()
-        spread_fire()
-        move_agents()
-        exploration_rate *= exploration_decay
-        if not any(grid[x, y] == FIRE for x in range(GRID_SIZE) for y in range(GRID_SIZE)):
-            print("🎉 All fires extinguished!")
-            break
-    cv2.destroyAllWindows()
+    global exploration_rate, simulation_complete
+    running = True
+    step = 0
+    simulation_complete = False
+
+    try:
+        while running and step < 100:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+            print(f"🔥 Step {step+1}")
+            # Debug: Print grid state
+            print("Grid state:")
+            for row in grid:
+                print([int(x) for x in row])
+            show_grid()
+            spread_fire()
+            move_agents()
+            exploration_rate *= exploration_decay
+            if not any(grid[x, y] == FIRE for x in range(GRID_SIZE) for y in range(GRID_SIZE)):
+                print("ALL FIRES EXTINGUISHED!!")
+                simulation_complete = True
+                break
+
+            step += 1
+            clock.tick(FPS)
+
+        # Keep window open with completion message until closed
+        while simulation_complete and running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+            show_grid()
+            clock.tick(FPS)
+
+    except Exception as e:
+        print(f"Simulation error: {e}")
+    finally:
+        pygame.quit()
 
 # Run the simulation
-run_simulation()
-print("Barrier image shape:", obstacles_img.shape)
+try:
+    run_simulation()
+    print("Barrier image shape:", obstacles_img.get_size())
+except Exception as e:
+    print(f"Simulation crashed: {e}")
+    pygame.quit()
