@@ -16,11 +16,19 @@ HOSE_AGENT = 6
 FIRE_SPREAD_PROB = 0.55
 MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Up, Down, Left, Right
 
+
 # Initialize grid
 grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
+# Add water buckets to the left and right sides (middle row)
+grid[5, 0] = WATER_TILE  # Left side
+grid[5, GRID_SIZE - 1] = WATER_TILE  # Right side
+
+# Add water buckets at the bottom row
+grid[GRID_SIZE - 1, 3] = WATER_TILE
+grid[GRID_SIZE - 1, 6] = WATER_TILE
 
 # Add fire locations
-fires = [(7, 2), (9, 7)]
+fires = [(7, 2), (9, 7), (8,6)]
 for x, y in fires:
     grid[x, y] = FIRE
 
@@ -56,7 +64,7 @@ def load_image(path, scale=1.0):
 
 agent_img = load_image("assets\\bot.png", scale=0.85)
 agent_dehydrated_img = load_image("assets\\bot2.png")
-obstacles_img = load_image("assets\\b5.png", scale=1.0)
+obstacles_img = load_image("assets\\Obstacle.png", scale=1.0)
 agent_hose_img = load_image("assets\\bot3.png")
 water_tile_img = load_image("assets\\water_tank.png", scale=2.0)
 
@@ -259,7 +267,7 @@ def show_grid():
     expected_height = GRID_SIZE * cell_size  # 800
     
     # Load the full background image (should be exactly grid size)
-    background = cv2.imread('assets/grid12.jpg')
+    background = cv2.imread('assets/Grid.jpg')
     background.shape  # should be (800, 800, 3) or (800, 800, 4)
 
     if background is None:
@@ -297,7 +305,7 @@ def show_grid():
                 overlay_image(img, agent_hose_img, px, py)
 
     cv2.imshow("Firefighting Simulation", img)
-    cv2.waitKey(40)
+    cv2.waitKey(1)
 
 
 def run_simulation():
