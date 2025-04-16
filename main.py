@@ -432,7 +432,6 @@ def run_simulation():
 # Run the simulation
 try:
     run_simulation()
-    print("Barrier image shape:", obstacles_img.get_size())
 except Exception as e:
     print(f"Simulation crashed: {e}")
     pygame.quit()
