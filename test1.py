@@ -47,7 +47,7 @@ hose_agent = agents[0]  # First agent has a hose
 # Randomly generate obstacles
 num_obstacles = 10
 obstacles = set()
-cell_size = 80  # Image display cell size
+cell_size = 100  # Image display cell size
 
 # Load image with transparency
 def load_image(path, scale=1.0):
@@ -56,8 +56,10 @@ def load_image(path, scale=1.0):
 
 agent_img = load_image("assets\\bot.png", scale=0.85)
 agent_dehydrated_img = load_image("assets\\bot2.png")
-obstacles_img = load_image("assets\\b3.png", scale=1.0)
+obstacles_img = load_image("assets\\b5.png", scale=1.0)
 agent_hose_img = load_image("assets\\bot3.png")
+water_tile_img = load_image("assets\\water_tank.png", scale=2.0)
+
 
 def is_adjacent_to_agent(x, y):
     for ax, ay in agents:
@@ -121,6 +123,7 @@ def extinguish_fire(x, y):
             if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
                 if grid[nx, ny] == FIRE:
                     grid[nx, ny] = EMPTY
+
 
 def hose_extinguish_fire(x, y, state):
     if state["water_remaining"] == 0:
@@ -223,34 +226,42 @@ def overlay_image(background, overlay, x, y):
 
 # Function to load frames from a GIF
 def load_gif_frames(gif_path, cell_size):
-    # Open the GIF using Pillow
     gif = Image.open(gif_path)
-    
     frames = []
     try:
         while True:
-            # Convert each frame to an OpenCV compatible format (numpy array)
-            frame = np.array(gif.convert("RGBA"))  # Convert to RGBA (including transparency)
-            frame = cv2.resize(frame, (cell_size, cell_size))  # Resize frame to fit the grid cell
+            frame = np.array(gif.convert("RGBA")) 
+            frame = cv2.resize(frame, (cell_size, cell_size))
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGRA)  # 🔥 This is the key fix
             frames.append(frame)
-            gif.seek(gif.tell() + 1)  # Move to the next frame
+            gif.seek(gif.tell() + 1)  
     except EOFError:
-        pass  # End of GIF frames
+        pass  
     return frames
+
 
 # Load the GIF frames
 fire_gif_frames = load_gif_frames("assets/fire.gif", cell_size)
 
 # Initialize global fire_frame_index
 fire_frame_index = 0
+fire_frame_index = (fire_frame_index + 2) % len(fire_gif_frames)  # Skip every other frame
+
+
+
 
 def show_grid():
     global fire_frame_index
     fire_frame_index = (fire_frame_index + 1) % len(fire_gif_frames)
 
-    # Load the full background image (should be exactly grid size)
-    background = cv2.imread('assets/tiles2.png')
+    cell_size = 100
+    expected_width = GRID_SIZE * cell_size  # 800
+    expected_height = GRID_SIZE * cell_size  # 800
     
+    # Load the full background image (should be exactly grid size)
+    background = cv2.imread('assets/grid12.jpg')
+    background.shape  # should be (800, 800, 3) or (800, 800, 4)
+
     if background is None:
         raise FileNotFoundError("Could not load 'assets/tiles2.jpg'. Check the file path and existence.")
 
@@ -277,7 +288,7 @@ def show_grid():
                 fire_frame = fire_gif_frames[fire_frame_index]
                 overlay_image(img, fire_frame, px, py)
             elif grid[x, y] == WATER_TILE:
-                cv2.rectangle(img, (px, py), (px + cell_size, py + cell_size), (255, 255, 0), -1)
+                overlay_image(img, water_tile_img, px, py)
             elif grid[x, y] == AGENT:
                 overlay_image(img, agent_img, px, py)
             elif grid[x, y] == DEHYDRATED_AGENT:
@@ -286,9 +297,7 @@ def show_grid():
                 overlay_image(img, agent_hose_img, px, py)
 
     cv2.imshow("Firefighting Simulation", img)
-    cv2.waitKey(70)
-
-
+    cv2.waitKey(40)
 
 
 def run_simulation():
