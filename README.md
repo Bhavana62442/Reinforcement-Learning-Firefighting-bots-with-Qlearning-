@@ -18,6 +18,15 @@ Install the required dependencies using the provided `requirements.txt`:
 - `pygame>=2.0`
 - `Pillow>=8.0`
 
+### How to Run
+
+1. Clone or download the repository.
+2. Place all assets in an `assets/` folder.
+3. Run the main simulation file
+
 To install:
 ```bash
 pip install -r requirements.txt
+
+
+
